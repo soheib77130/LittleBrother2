@@ -1071,78 +1071,102 @@ def searchCopainsdavant(nom, city):
 		print(table_instance.table)
 
 def searchPJ(requete='', num=''):
-	def testResponse(requete):
-		noReponse = soup.find("p", {"class": "wording-no-responses"})
+	page = requete.text
+	soup = BeautifulSoup(page, "html.parser")
+
+	def testResponse(local_soup):
+		noReponse = local_soup.find("p", {"class": "wording-no-responses"})
 		if noReponse:
 			return 1
-			# print("[!] Aucun resultattttt pour votre recherche... o_o' ")
+		return 0
 
-	page = requete.text #content.decode('utf-8')
-	soup = BeautifulSoup(page, "html.parser")
-	rep = testResponse(requete)
+	rep = testResponse(soup)
 	if rep == 1:
 		print(warning+" No result for your search ... o_o'")
 		if num != '':
-			# phoneNumber(num)
 			pass
-		else:
-			pass
-	else:
-		pass
-
-	try:
-		nameList = soup.find_all("a", {"class": "denomination-links pj-lb pj-link"})
-		addressList = soup.find_all("a", {"class": "adresse pj-lb pj-link"})
-		numList = soup.find_all("strong", {"class": "num"})
-		# name = name.string.strip()
-		# adresse = adresse.string.strip()
-		# num = num.string.strip()
-		# printResult(name, adresse, num)
-	except AttributeError:
-		pass
+		return
 
 	namesList2 = []
 	addressesList2 = []
 	numesList2 = []
 	operatorList = []
 
-	# try:
-	for name in nameList:
-		namesList2.append(name.text.strip())
-	for addresse in addressList:
-		addressesList2.append(addresse.text.strip())
-	for num in numList:
+	name_selectors = [
+		"a.denomination-links.pj-lb.pj-link",
+		"a.denomination-links",
+		"a[href*='/pros/']",
+		"h2",
+		"h3",
+	]
+	address_selectors = [
+		"a.adresse.pj-lb.pj-link",
+		"a.adresse",
+		"[itemprop='streetAddress']",
+		"[class*='adresse']",
+	]
+	phone_selectors = [
+		"strong.num",
+		"span.num",
+		"a[href^='tel:']",
+	]
+
+	def collect_by_selectors(selectors):
+		items = []
+		seen = set()
+		for selector in selectors:
+			for node in soup.select(selector):
+				text_value = node.get_text(" ", strip=True)
+				if selector == "a[href^='tel:']":
+					href = node.get("href", "")
+					if href.startswith("tel:"):
+						text_value = href.replace("tel:", "").strip()
+				if text_value and text_value not in seen:
+					seen.add(text_value)
+					items.append(text_value)
+		return items
+
+	namesList2 = collect_by_selectors(name_selectors)
+	addressesList2 = collect_by_selectors(address_selectors)
+	numesList2 = collect_by_selectors(phone_selectors)
+
+	if len(numesList2) == 0 and len(namesList2) == 0:
+		if "captcha" in page.lower() or "robot" in page.lower():
+			print(warning+" PagesJaunes blocked the request (anti-bot/captcha).")
+		return
+
+	for num_value in numesList2:
 		phone = searchInfoNumero()
-		phone.search(num.text.strip())
-		operator = phone.operator
-		operatorList.append(operator) 
-		numesList2.append(num.text.strip())
-	# except:
-	# 	pass
-	# 	print("[!] Aucun resultat pour votre recherche... o_o'")
+		try:
+			phone.search(num_value)
+			operator = phone.operator
+		except:
+			operator = "None"
+		operatorList.append(operator)
 
-	regroup = zip(namesList2,addressesList2,numesList2, operatorList)
-	
+	max_len = max(len(namesList2), len(addressesList2), len(numesList2), 1)
+	while len(namesList2) < max_len:
+		namesList2.append("N/A")
+	while len(addressesList2) < max_len:
+		addressesList2.append("N/A")
+	while len(numesList2) < max_len:
+		numesList2.append("N/A")
+	while len(operatorList) < max_len:
+		operatorList.append("None")
+
+	regroup = zip(namesList2, addressesList2, numesList2, operatorList)
+
 	title = " Particulier "
-
 	TABLE_DATA = [
 		('Name', 'Adresse', 'Phone', 'Operateur'),
 	]
 
-	listeInfos = []
-
 	for infos in regroup:
-		
-		try:
+		TABLE_DATA.append(infos)
 
-			TABLE_DATA.append(infos)
+	table_instance = SingleTable(TABLE_DATA, title)
+	print("\n"+table_instance.table)
 
-		except AttributeError:
-			pass
-
-	if rep != 1:
-		table_instance = SingleTable(TABLE_DATA, title)
-		print("\n"+table_instance.table)
 
 def searchGoogle(requete='', requete2=''):
 
