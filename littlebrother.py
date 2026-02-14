@@ -407,26 +407,24 @@ class facebookSearchTool:
 		else:
 			url = profile
 
+		page = ""
 		try:
 			page = requests.get(url).content.decode('utf-8')
-			findId = re.search(r"entity_id=([0-9]+)", page).group(0)
-
+			findId = re.search(r"entity_id=([0-9]+)", page)
 			if findId:
-				facebookID = findId.replace("entity_id=", '')
+				self.facebookId = findId.group(1)
 			else:
 				self.facebookId = "None"
-			
-			self.facebookId = facebookID
-
 		except:
 			self.facebookId = "None"
 
-		name = re.search(r'pageTitle\">(.*)</title>', page).group(0)
-			
+		name = re.search(r'pageTitle\">(.*)</title>', page)
 		if name:
-			name = name.replace("pageTitle\">", '').replace("| Facebook</title>", '')
-			self.name = name
-
+			name = name.group(1).replace("| Facebook", '').strip()
+			if name:
+				self.name = name
+			else:
+				self.name = "None"
 		else:
 			self.name = "None"
 
