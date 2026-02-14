@@ -407,26 +407,24 @@ class facebookSearchTool:
 		else:
 			url = profile
 
+		page = ""
 		try:
 			page = requests.get(url).content.decode('utf-8')
-			findId = re.search(r"entity_id=([0-9]+)", page).group(0)
-
+			findId = re.search(r"entity_id=([0-9]+)", page)
 			if findId:
-				facebookID = findId.replace("entity_id=", '')
+				self.facebookId = findId.group(1)
 			else:
 				self.facebookId = "None"
-			
-			self.facebookId = facebookID
-
 		except:
 			self.facebookId = "None"
 
-		name = re.search(r'pageTitle\">(.*)</title>', page).group(0)
-			
+		name = re.search(r'pageTitle\">(.*)</title>', page)
 		if name:
-			name = name.replace("pageTitle\">", '').replace("| Facebook</title>", '')
-			self.name = name
-
+			name = name.group(1).replace("| Facebook", '').strip()
+			if name:
+				self.name = name
+			else:
+				self.name = "None"
 		else:
 			self.name = "None"
 
@@ -984,8 +982,13 @@ def searchCopainsdavant(nom, city):
 
 	for url in urlList:
 		url = url.find("a")
+		if url is None:
+			continue
 		urls = str(url)
-		href = re.search(r"/p/([a-zA-Z0-9_-]+)", urls).group()
+		match = re.search(r"/p/([a-zA-Z0-9_-]+)", urls)
+		if match is None:
+			continue
+		href = match.group()
 		urlList2.append(href)
 
 	for url in urlList2:
@@ -1014,9 +1017,20 @@ def searchCopainsdavant(nom, city):
 
 	for name in nameList:
 		name = name.find("a")
-		namesList2.append(name.string)
+		if name is None:
+			namesList2.append("N/A")
+			continue
+		name_text = name.string if name.string is not None else name.get_text(strip=True)
+		if name_text:
+			namesList2.append(name_text)
+		else:
+			namesList2.append("N/A")
 	for addr in addresseList:
-		addressesList2.append(addr.string.strip())
+		addr_text = addr.string if addr.string is not None else addr.get_text(strip=True)
+		if addr_text:
+			addressesList2.append(addr_text.strip())
+		else:
+			addressesList2.append("N/A")
 	for date in birthdayList:
 		date = date.replace("<abbr class=\"bday\" title=\"", "").replace("00:00:00\">", "- ").replace("</abbr>", "").replace("\">", "")
 		birthdayList2.append(date)
