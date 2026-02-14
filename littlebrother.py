@@ -407,26 +407,24 @@ class facebookSearchTool:
 		else:
 			url = profile
 
+		page = ""
 		try:
 			page = requests.get(url).content.decode('utf-8')
-			findId = re.search(r"entity_id=([0-9]+)", page).group(0)
-
+			findId = re.search(r"entity_id=([0-9]+)", page)
 			if findId:
-				facebookID = findId.replace("entity_id=", '')
+				self.facebookId = findId.group(1)
 			else:
 				self.facebookId = "None"
-			
-			self.facebookId = facebookID
-
 		except:
 			self.facebookId = "None"
 
-		name = re.search(r'pageTitle\">(.*)</title>', page).group(0)
-			
+		name = re.search(r'pageTitle\">(.*)</title>', page)
 		if name:
-			name = name.replace("pageTitle\">", '').replace("| Facebook</title>", '')
-			self.name = name
-
+			name = name.group(1).replace("| Facebook", '').strip()
+			if name:
+				self.name = name
+			else:
+				self.name = "None"
 		else:
 			self.name = "None"
 
@@ -984,8 +982,13 @@ def searchCopainsdavant(nom, city):
 
 	for url in urlList:
 		url = url.find("a")
+		if url is None:
+			continue
 		urls = str(url)
-		href = re.search(r"/p/([a-zA-Z0-9_-]+)", urls).group()
+		match = re.search(r"/p/([a-zA-Z0-9_-]+)", urls)
+		if match is None:
+			continue
+		href = match.group()
 		urlList2.append(href)
 
 	for url in urlList2:
@@ -1014,9 +1017,20 @@ def searchCopainsdavant(nom, city):
 
 	for name in nameList:
 		name = name.find("a")
-		namesList2.append(name.string)
+		if name is None:
+			namesList2.append("N/A")
+			continue
+		name_text = name.string if name.string is not None else name.get_text(strip=True)
+		if name_text:
+			namesList2.append(name_text)
+		else:
+			namesList2.append("N/A")
 	for addr in addresseList:
-		addressesList2.append(addr.string.strip())
+		addr_text = addr.string if addr.string is not None else addr.get_text(strip=True)
+		if addr_text:
+			addressesList2.append(addr_text.strip())
+		else:
+			addressesList2.append("N/A")
 	for date in birthdayList:
 		date = date.replace("<abbr class=\"bday\" title=\"", "").replace("00:00:00\">", "- ").replace("</abbr>", "").replace("\">", "")
 		birthdayList2.append(date)
@@ -1057,78 +1071,166 @@ def searchCopainsdavant(nom, city):
 		print(table_instance.table)
 
 def searchPJ(requete='', num=''):
-	def testResponse(requete):
-		noReponse = soup.find("p", {"class": "wording-no-responses"})
+	page = requete.text
+	soup = BeautifulSoup(page, "html.parser")
+
+	def testResponse(local_soup):
+		noReponse = local_soup.find("p", {"class": "wording-no-responses"})
 		if noReponse:
 			return 1
-			# print("[!] Aucun resultattttt pour votre recherche... o_o' ")
+		return 0
 
-	page = requete.text #content.decode('utf-8')
-	soup = BeautifulSoup(page, "html.parser")
-	rep = testResponse(requete)
+	def append_unique(target_list, value):
+		if value is None:
+			return
+		value = str(value).strip()
+		if value and value not in target_list:
+			target_list.append(value)
+
+	def extract_from_json_ld(local_soup):
+		parsed = []
+		json_nodes = local_soup.find_all("script", {"type": "application/ld+json"})
+		for node in json_nodes:
+			raw = node.string or node.get_text(strip=True)
+			if not raw:
+				continue
+			try:
+				payload = json.loads(raw)
+			except:
+				continue
+
+			stack = payload if isinstance(payload, list) else [payload]
+			while stack:
+				item = stack.pop(0)
+				if isinstance(item, list):
+					stack.extend(item)
+					continue
+				if not isinstance(item, dict):
+					continue
+				if "@graph" in item and isinstance(item["@graph"], list):
+					stack.extend(item["@graph"])
+				item_type = item.get("@type", "")
+				if isinstance(item_type, list):
+					item_type = " ".join(item_type)
+
+				if "Person" in str(item_type) or "LocalBusiness" in str(item_type) or "Organization" in str(item_type):
+					name = item.get("name")
+					telephone = item.get("telephone")
+					address = item.get("address")
+					address_value = ""
+					if isinstance(address, dict):
+						parts = [
+							address.get("streetAddress", ""),
+							address.get("postalCode", ""),
+							address.get("addressLocality", ""),
+						]
+						address_value = " ".join([part for part in parts if part]).strip()
+					elif isinstance(address, str):
+						address_value = address.strip()
+
+					if name or telephone or address_value:
+						parsed.append((name, address_value, telephone))
+		return parsed
+
+	rep = testResponse(soup)
 	if rep == 1:
 		print(warning+" No result for your search ... o_o'")
 		if num != '':
-			# phoneNumber(num)
 			pass
-		else:
-			pass
-	else:
-		pass
-
-	try:
-		nameList = soup.find_all("a", {"class": "denomination-links pj-lb pj-link"})
-		addressList = soup.find_all("a", {"class": "adresse pj-lb pj-link"})
-		numList = soup.find_all("strong", {"class": "num"})
-		# name = name.string.strip()
-		# adresse = adresse.string.strip()
-		# num = num.string.strip()
-		# printResult(name, adresse, num)
-	except AttributeError:
-		pass
+		return
 
 	namesList2 = []
 	addressesList2 = []
 	numesList2 = []
 	operatorList = []
 
-	# try:
-	for name in nameList:
-		namesList2.append(name.text.strip())
-	for addresse in addressList:
-		addressesList2.append(addresse.text.strip())
-	for num in numList:
+	for name, address, phone in extract_from_json_ld(soup):
+		append_unique(namesList2, name)
+		append_unique(addressesList2, address)
+		append_unique(numesList2, phone)
+
+	name_selectors = [
+		"a.denomination-links.pj-lb.pj-link",
+		"a.denomination-links",
+		"a[href*='/pros/']",
+		"[itemprop='name']",
+		"h2",
+		"h3",
+	]
+	address_selectors = [
+		"a.adresse.pj-lb.pj-link",
+		"a.adresse",
+		"[itemprop='streetAddress']",
+		"[class*='adresse']",
+	]
+	phone_selectors = [
+		"strong.num",
+		"span.num",
+		"[itemprop='telephone']",
+		"a[href^='tel:']",
+	]
+
+	def collect_by_selectors(selectors):
+		items = []
+		seen = set()
+		for selector in selectors:
+			for node in soup.select(selector):
+				text_value = node.get_text(" ", strip=True)
+				if selector == "a[href^='tel:']":
+					href = node.get("href", "")
+					if href.startswith("tel:"):
+						text_value = href.replace("tel:", "").strip()
+				if text_value and text_value not in seen:
+					seen.add(text_value)
+					items.append(text_value)
+		return items
+
+	for value in collect_by_selectors(name_selectors):
+		append_unique(namesList2, value)
+	for value in collect_by_selectors(address_selectors):
+		append_unique(addressesList2, value)
+	for value in collect_by_selectors(phone_selectors):
+		append_unique(numesList2, value)
+
+	if len(numesList2) == 0 and len(namesList2) == 0 and len(addressesList2) == 0:
+		if "captcha" in page.lower() or "robot" in page.lower():
+			print(warning+" PagesJaunes blocked the request (anti-bot/captcha).")
+		else:
+			print(warning+" No Particulier data parsed from PagesJaunes response.")
+		return
+
+	for num_value in numesList2:
 		phone = searchInfoNumero()
-		phone.search(num.text.strip())
-		operator = phone.operator
-		operatorList.append(operator) 
-		numesList2.append(num.text.strip())
-	# except:
-	# 	pass
-	# 	print("[!] Aucun resultat pour votre recherche... o_o'")
+		try:
+			phone.search(num_value)
+			operator = phone.operator
+		except:
+			operator = "None"
+		operatorList.append(operator)
 
-	regroup = zip(namesList2,addressesList2,numesList2, operatorList)
-	
+	max_len = max(len(namesList2), len(addressesList2), len(numesList2), 1)
+	while len(namesList2) < max_len:
+		namesList2.append("N/A")
+	while len(addressesList2) < max_len:
+		addressesList2.append("N/A")
+	while len(numesList2) < max_len:
+		numesList2.append("N/A")
+	while len(operatorList) < max_len:
+		operatorList.append("None")
+
+	regroup = zip(namesList2, addressesList2, numesList2, operatorList)
+
 	title = " Particulier "
-
 	TABLE_DATA = [
 		('Name', 'Adresse', 'Phone', 'Operateur'),
 	]
 
-	listeInfos = []
-
 	for infos in regroup:
-		
-		try:
+		TABLE_DATA.append(infos)
 
-			TABLE_DATA.append(infos)
+	table_instance = SingleTable(TABLE_DATA, title)
+	print("\n"+table_instance.table)
 
-		except AttributeError:
-			pass
-
-	if rep != 1:
-		table_instance = SingleTable(TABLE_DATA, title)
-		print("\n"+table_instance.table)
 
 def searchGoogle(requete='', requete2=''):
 
